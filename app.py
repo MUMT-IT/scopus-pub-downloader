@@ -10,7 +10,8 @@ API_KEY = '871232b0f825c9b5f38f8833dc0d8691'
 #URL = 'http://mumtmis.herokuapp.com/research/api/articles'
 URL = 'http://localhost:5000/research/api/articles'
 
-QUERY = 'AFFILORG ( "Faculty of Medical Technology"  "Mahidol University" )  AND  AFFILCOUNTRY ( thailand ) PUBYEAR = {}'
+QUERY = ('AFFILORG ( "Faculty of Medical Technology"  "Mahidol University" )'
+        '  AND  AFFILCOUNTRY ( thailand ) PUBYEAR = {}')
 
 
 class MainPanel(wx.Panel):
@@ -23,10 +24,9 @@ class MainPanel(wx.Panel):
                                       style=wx.TE_MULTILINE | wx.TE_READONLY)
         self.search_box.SetValue(QUERY.format(datetime.datetime.now().year))
         search_lbl = wx.StaticText(self, label="Search Query")
-        status_lbl = wx.StaticText(self, label='Downloading')
-        self.total_lbl = wx.StaticText(self, label='')
+        status_lbl = wx.StaticText(self, label='Status')
         self.progress_lbl = wx.StaticText(self, label='')
-        self.progress_bar = wx.Gauge(self)
+        self.total_lbl = wx.StaticText(self, label='')
         self.year_box = wx.TextCtrl(self)
         self.year_box.SetValue(str(datetime.datetime.now().year))
         self.year_box.SetFocus()
@@ -40,8 +40,6 @@ class MainPanel(wx.Panel):
         search_sizer.Add(self.total_lbl)
         search_sizer.Add(status_lbl)
         search_sizer.Add(self.progress_lbl)
-        search_sizer.Add(wx.StaticText(self, label='Complete'))
-        search_sizer.Add(self.progress_bar)
         button_sizer = wx.BoxSizer(wx.HORIZONTAL)
         button_sizer.Add(download_btn)
         vsizer = wx.BoxSizer(wx.VERTICAL)
@@ -52,15 +50,26 @@ class MainPanel(wx.Panel):
         self.Fit()
 
     def download(self, event):
-        results = ScopusSearch(self.search_box.GetValue(), subscriber=True, verbose=True)
+        progdlg = wx.ProgressDialog('Searching', 'Searching for articles..', maximum=100)
+        progdlg.Pulse()
+        try:
+            results = ScopusSearch(self.search_box.GetValue(), subscriber=True, verbose=True)
+        except:
+            wx.MessageDialog(self,
+                             caption='Download Error',
+                             message='Please check the Internet connection. You may have to connect to the VPN to download data from SCOPUS',
+                             style=wx.OK|wx.CENTER).ShowModal()
+        progdlg.Update(value=100)
         self.total_lbl.SetLabel(str(results.get_results_size()))
-        self.progress_bar.SetRange(results.get_results_size())
+        print('Total is {}'.format(results.get_results_size()))
+        self.progress_lbl.SetLabel('Fetching..')
+        progdlg = wx.ProgressDialog('Download', 'Please wait..',
+                                    maximum=results.get_results_size())
         for n, doc in enumerate(results.results, start=1):
             try:
-                self.progress_lbl.SetLabel(doc.eid)
                 abstract = AbstractRetrieval(doc.eid, view='FULL')
             except:
-                self.progress_lbl.SetLabel(doc.eid + ' failed to download.')
+                continue
 
             subject_areas = []
             for subj in abstract.subject_areas:
@@ -80,29 +89,35 @@ class MainPanel(wx.Panel):
                     'link': author.scopus_author_link,
                     'indexed_name': author.indexed_name,
                 })
-
-            resp = requests.post(URL, json={
-                'scopus_id': doc.eid,
-                'scopus_link': abstract.scopus_link,
-                'subject_areas': subject_areas,
-                'title': doc.title,
-                'doi': doc.doi,
-                'citedby_count': doc.citedby_count,
-                'abstract': doc.description,
-                'cover_date': doc.coverDate,
-                'authors': authors,
-                'author_names': doc.author_names,
-                'author_afids': doc.author_afids,
-                'afid': doc.afid,
-                'affiliation_country': doc.affiliation_country,
-                'affilname': doc.affilname,
-            })
-            if resp.status_code != 200:
-                self.progress_lbl.SetLabel(doc.eid + ' done.')
-            else:
-                self.progress_lbl.SetLabel(doc.eid + ' failed to save data.')
-            self.progress_bar.SetValue(n)
-        self.progress_lbl.SetLabel('Finished.')
+            try:
+                resp = requests.post(URL, json={
+                    'scopus_id': doc.eid,
+                    'scopus_link': abstract.scopus_link,
+                    'subject_areas': subject_areas,
+                    'title': doc.title,
+                    'doi': doc.doi,
+                    'citedby_count': doc.citedby_count,
+                    'abstract': doc.description,
+                    'cover_date': doc.coverDate,
+                    'authors': authors,
+                    'author_names': doc.author_names,
+                    'author_afids': doc.author_afids,
+                    'afid': doc.afid,
+                    'affiliation_country': doc.affiliation_country,
+                    'affilname': doc.affilname,
+                })
+                if resp.status_code != 200:
+                    print('failed.')
+                else:
+                    print('done.')
+            except:
+                wx.MessageDialog(self,
+                                 caption='Upload Error',
+                                 message='Cannot upload data to the MIS. Please check the Internet connection.',
+                                 style=wx.OK | wx.CENTER).ShowModal()
+                break
+            progdlg.Update(value=n)
+        self.progress_lbl.SetLabel('Finished')
 
 
     def change_year(self, event):
