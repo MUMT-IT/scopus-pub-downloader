@@ -5,12 +5,11 @@ import requests
 
 from pybliometrics.scopus import ScopusSearch, AuthorRetrieval, AbstractRetrieval
 
-API_KEY = '871232b0f825c9b5f38f8833dc0d8691'
+# add radio button for switching remote server
+URL = 'http://mumtmis.herokuapp.com/research/api/articles'
+#URL = 'http://localhost:5000/research/api/articles'
 
-#URL = 'http://mumtmis.herokuapp.com/research/api/articles'
-URL = 'http://localhost:5000/research/api/articles'
-
-QUERY = ('AFFILORG ( "Faculty of Medical Technology"  "Mahidol University" )'
+QUERY = ('AFFIL ( "Faculty of Medical Technology" AND "Mahidol university" )'
         '  AND  AFFILCOUNTRY ( thailand ) PUBYEAR = {}')
 
 
@@ -53,7 +52,10 @@ class MainPanel(wx.Panel):
         progdlg = wx.ProgressDialog('Searching', 'Searching for articles..', maximum=100)
         progdlg.Pulse()
         try:
-            results = ScopusSearch(self.search_box.GetValue(), subscriber=True, verbose=True)
+            results = ScopusSearch(self.search_box.GetValue(),
+                                   subscriber=False,
+                                   verbose=True,
+                                   refresh=True)
         except:
             wx.MessageDialog(self,
                              caption='Download Error',
@@ -67,7 +69,7 @@ class MainPanel(wx.Panel):
                                     maximum=results.get_results_size())
         for n, doc in enumerate(results.results, start=1):
             try:
-                abstract = AbstractRetrieval(doc.eid, view='FULL')
+                abstract = AbstractRetrieval(doc.eid, view='FULL', refresh=True)
             except:
                 continue
 
@@ -81,6 +83,9 @@ class MainPanel(wx.Panel):
             authors = []
             for aid in doc.author_ids.split(';'):
                 author = AuthorRetrieval(aid)
+                affiliation = None
+                if author.affiliation_current:
+                    affiliation = author.affiliation_current[0]
                 authors.append({
                     'author_id': aid,
                     'firstname': author.given_name,
@@ -88,11 +93,15 @@ class MainPanel(wx.Panel):
                     'h_index': author.h_index,
                     'link': author.scopus_author_link,
                     'indexed_name': author.indexed_name,
+                    'afid': affiliation.id if affiliation else None,
+                    'afname': affiliation.preferred_name if affiliation else None,
+                    'country': affiliation.country if affiliation else None
                 })
             try:
                 resp = requests.post(URL, json={
                     'scopus_id': doc.eid,
                     'scopus_link': abstract.scopus_link,
+                    'publication_name': abstract.publicationName,
                     'subject_areas': subject_areas,
                     'title': doc.title,
                     'doi': doc.doi,
@@ -107,9 +116,9 @@ class MainPanel(wx.Panel):
                     'affilname': doc.affilname,
                 })
                 if resp.status_code != 200:
-                    print('failed.')
+                    print('{}) {} failed.'.format(n, doc.title[:50]))
                 else:
-                    print('done.')
+                    print('{}) {} done.'.format(n, doc.title[:50]))
             except:
                 wx.MessageDialog(self,
                                  caption='Upload Error',
