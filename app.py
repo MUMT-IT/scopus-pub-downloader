@@ -57,10 +57,12 @@ class MainPanel(wx.Panel):
                                    verbose=True,
                                    refresh=True)
         except:
-            wx.MessageDialog(self,
+            with wx.MessageDialog(self,
                              caption='Download Error',
                              message='Please check the Internet connection. You may have to connect to the VPN to download data from SCOPUS',
-                             style=wx.OK|wx.CENTER).ShowModal()
+                             style=wx.OK|wx.CENTER) as dlg:
+                if dlg.ShowModal() == wx.ID_OK:
+                    raise SystemExit
         progdlg.Update(value=100)
         self.total_lbl.SetLabel(str(results.get_results_size()))
         print('Total is {}'.format(results.get_results_size()))
@@ -69,34 +71,37 @@ class MainPanel(wx.Panel):
                                     maximum=results.get_results_size())
         for n, doc in enumerate(results.results, start=1):
             try:
-                abstract = AbstractRetrieval(doc.eid, view='FULL', refresh=True)
-            except:
+                abstract = AbstractRetrieval(doc.eid, view='META', refresh=True)
+            except Exception as e:
+                print(e)
                 continue
 
             subject_areas = []
-            for subj in abstract.subject_areas:
-                subject_areas.append({
-                    'area': subj.area,
-                    'code': subj.code,
-                    'abbreviation': subj.abbreviation,
-                })
+            if abstract.subject_areas:
+                for subj in abstract.subject_areas:
+                    subject_areas.append({
+                        'area': subj.area,
+                        'code': subj.code,
+                        'abbreviation': subj.abbreviation,
+                    })
             authors = []
-            for aid in doc.author_ids.split(';'):
-                author = AuthorRetrieval(aid)
-                affiliation = None
-                if author.affiliation_current:
-                    affiliation = author.affiliation_current[0]
-                authors.append({
-                    'author_id': aid,
-                    'firstname': author.given_name,
-                    'lastname': author.surname,
-                    'h_index': author.h_index,
-                    'link': author.scopus_author_link,
-                    'indexed_name': author.indexed_name,
-                    'afid': affiliation.id if affiliation else None,
-                    'afname': affiliation.preferred_name if affiliation else None,
-                    'country': affiliation.country if affiliation else None
-                })
+            if abstract.authors:
+                for aid in doc.author_ids.split(';'):
+                    author = AuthorRetrieval(aid)
+                    affiliation = None
+                    if author.affiliation_current:
+                        affiliation = author.affiliation_current[0]
+                    authors.append({
+                        'author_id': aid,
+                        'firstname': author.given_name,
+                        'lastname': author.surname,
+                        'h_index': author.h_index,
+                        'link': author.scopus_author_link,
+                        'indexed_name': author.indexed_name,
+                        'afid': affiliation.id if affiliation else None,
+                        'afname': affiliation.preferred_name if affiliation else None,
+                        'country': affiliation.country if affiliation else None
+                    })
             try:
                 resp = requests.post(URL, json={
                     'scopus_id': doc.eid,
@@ -116,9 +121,9 @@ class MainPanel(wx.Panel):
                     'affilname': doc.affilname,
                 })
                 if resp.status_code != 200:
-                    print('{}) {} failed.'.format(n, doc.title[:50]))
+                    print('{}) {} failed.'.format(n, doc.title[:30]))
                 else:
-                    print('{}) {} done.'.format(n, doc.title[:50]))
+                    print('{}) {} done.'.format(n, doc.title[:30]))
             except:
                 wx.MessageDialog(self,
                                  caption='Upload Error',
